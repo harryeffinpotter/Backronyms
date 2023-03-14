@@ -116,7 +116,7 @@ async def lwf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Whatup dude? click \"Join game\" to join the game!\n"
         "If you don't want to see these messages click \"No thanks.\"",
         reply_markup=ReplyKeyboardMarkup(
-            reply_keyboard, one_time_keyboard=True, input_field_placeholder="Join game!"
+            reply_keyboard, one_time_keyboard=True,selective=true, input_field_placeholder="Join game!"
         ),
     )
     print("about to hit up startgame)")
@@ -154,12 +154,12 @@ async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         currentPuzzle=random_char(3)
         replytext=f"Write an acronym that starts with these the following {len(currentPuzzle)} characters!\n\n{currentPuzzle.upper()}"
         await update.message.reply_text(
-            replytext,
+            replytext, reply_markup=ReplyKeyboardRemove()
         )
         return WAITFORANSWER
     else:
         await update.message.reply_text(
-            text,
+            text, reply_markup=ReplyKeyboardRemove()
         )
         return
 
