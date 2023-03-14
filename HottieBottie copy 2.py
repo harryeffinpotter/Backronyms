@@ -55,17 +55,9 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 answerssubmitted=0
 currentPuzzle=''
-playingDict = {}
-scoreDict = {}
-partyleader=''
-roundstarted=0
-answerDict={}
 totalrounds=3
-currentround=1
-votedList=[]
-leaderkey=0
-totalplaying=0
-usedchars=[]
+players_dict= {}
+roundinfo = {}
 requiredplayers=2
 # Enable logging
 logging.basicConfig(
@@ -76,14 +68,37 @@ TOKEN="6270603273:AAHLTXrg6ozchgm--iSarxsVzQCewMlwtKM"
 STARTGAME, WAITFORANSWER, VOTINGROUND, FINISH = range(4)
 
 async def setplayers(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global totalplaying
-    global requiredplayers
+    global players_dict
     user = update.message.from_user
+    players_dict.update({ user.id: {'name': user.first_name, 'answer': '', 'score': 0, 'lastround': 0}})
     requiredplayers=int(update.message.text.replace("/setplayers ", "").strip())
     replytext=f"Required players count changed to {requiredplayers}"
     await update.message.reply_text(
             replytext
         )
+
+async def set_timer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add a job to the queue."""
+    chat_id = update.effective_message.chat_id
+    try:
+        # args[0] should contain the time for the timer in seconds
+        due = float(context.args[0])
+        if due < 0:
+            await update.effective_message.reply_text("Sorry we can not go back to future!")
+            return
+
+        job_removed = remove_job_if_exists(str(chat_id), context)
+        context.job_queue.run_once(alarm, due, chat_id=chat_id, name=str(chat_id), data=due)
+
+    except (IndexError, ValueError):
+
+
+async def unset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remove the job if the user changed their mind."""
+    chat_id = update.message.chat_id
+    job_removed = remove_job_if_exists(str(chat_id), context)
+    text = "Timer successfully cancelled!" if job_removed else "You have no active timer."
+    await update.message.reply_text(text)
 
 
 def random_char(y) -> str:
@@ -97,19 +112,24 @@ async def lwf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts new round of Letters With Friends."""
     global totalplaying
     global requiredplayers
-    if "New match" in update.message.text or "Rematch" in update.message.text:
-        reply_keyboard = [["Join game"], ["Quit"], ["How to play"], ["Additional options."]]
-        return STARTGAME
+    playingDict.update({user.id: user.first_name})
+    if totalplaying>=requiredplayers:
+        return WAITFORANSWER
+    elif totalplaying+1==requiredplayers:
+        totalplaying=totalplaying+1
+        text=f"Players: {totalplaying}/{requiredplayers}\nMax players reached...\nStarting game!"
     else:
-        reply_keyboard = [["Join game", "Force start"], ["Quit", "Set max players"], ["How to play", "Other options"]]
-    await update.message.reply_text(
-        "Whatup dude? click \"Join game\" to join the game!\n"
-        "If you don't want to see these messages click \"No thanks.\"",
-        reply_markup=ReplyKeyboardMarkup(
-            reply_keyboard, one_time_keyboard=False,selective=True, input_field_placeholder="Join game!"
-        ),
-    )
-    print("about to hit up startgame)")
+        totalplaying=totalplaying+1
+        text=f"Players: {totalplaying}/{requiredplayers}\nWaiting for more to join..."
+        playertext=""
+        current=0
+        for key in playingDict.keys():
+            if current!=0:
+                playertext += f"\n{playingDict[key]}"
+            else:
+                current=1
+                playertext = f"{playingDict[key]}"
+        replytext=f"{text}\n\nPlayers:\n{playertext}"
     return STARTGAME
 
 async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -120,29 +140,6 @@ async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     global currentPuzzle
     replytext=""
     user = update.message.from_user
-    if "Rematch" in update.message.text:
-        replytext = update.message.text
-    elif "Quit" in update.message.text:
-        quitgame()
-    elif "Join" in update.message.text:
-        playingDict.update({user.id: user.first_name})
-        if totalplaying>=requiredplayers:
-            return WAITFORANSWER
-        elif totalplaying+1==requiredplayers:
-            totalplaying=totalplaying+1
-            text=f"Players: {totalplaying}/{requiredplayers}\nStarting game!"
-        else:
-            totalplaying=totalplaying+1
-            text=f"Players: {totalplaying}/{requiredplayers}\nWaiting for more to join..."
-        playertext=""
-        current=0
-        for key in playingDict.keys():
-            if current!=0:
-                playertext += f"\n{playingDict[key]}"
-            else:
-                current=1
-                playertext = f"{playingDict[key]}"
-        replytext=f"{text}\n\nPlayers:\n{playertext}"
     if totalplaying==requiredplayers:
         currentPuzzle=random_char(3)
         replytext=f"Write an acronym that starts with these the following {len(currentPuzzle)} characters!\n\n{currentPuzzle.upper()}"
@@ -437,6 +434,8 @@ async def receive_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def main() -> None:
     """Run the bot."""
+    global roundinfo
+    
     # Create the Application and pass it your bot's token.
     application = (
         Application.builder()
