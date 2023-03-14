@@ -899,7 +899,7 @@ class Application(Generic[BT, CCT, UD, CD, BD, JQ], AsyncContextManager["Applica
         except NotImplementedError as exc:
             warn(
                 f"Could not add signal handlers for the stop signals {stop_signals} due to "
-                f"exception `{exc!r}`. If your event loop does not implement `add_signal_handler`,"
+                f"exception `{exc!r}`. If your event loop does not implement ` add_signal_handler`,"
                 f" please pass `stop_signals=None`.",
                 stacklevel=3,
             )
