@@ -13,9 +13,9 @@ Send /start to initiate the conversation.
 Press Ctrl-C on the command line or send a signal to the process to stop the
 bot.
 """
-import time
 import logging
 import string
+import time
 import random
 
 from telegram import __version__ as TG_VER
@@ -31,7 +31,7 @@ if __version_info__ < (20, 0, 0, "alpha", 5):
         f"{TG_VER} version of this example, "
         f"visit https://docs.python-telegram-bot.org/en/v{TG_VER}/examples.html"
     )
-from telegram import     (
+from telegram import (
     KeyboardButton,
     KeyboardButtonPollType,
     Poll,
@@ -53,138 +53,97 @@ from telegram.ext import (
     PicklePersistence
 )
 from telegram.constants import ParseMode
-answerssubmitted=0
-currentPuzzle=''
-totalrounds=3
-players_dict= {}
+
+answerssubmitted = 0
+currentpuzzle = ''
+totalrounds = 3
+currentround = 0
+players_dict = {}
 roundinfo = {}
-requiredplayers=2
+requiredplayers = 2
 # Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-TOKEN="6270603273:AAHLTXrg6ozchgm--iSarxsVzQCewMlwtKM"
-STARTGAME, WAITFORANSWER, VOTINGROUND, FINISH = range(4)
+TOKEN = "6270603273:AAHLTXrg6ozchgm--iSarxsVzQCewMlwtKM"
+WAITFORANSWER, FINISH = range(2)
 
 async def setplayers(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global players_dict
     user = update.message.from_user
-    players_dict.update({ user.id: {'name': user.first_name, 'answer': '', 'score': 0, 'lastround': 0}})
+    players_dict.update({user.id: {'name': user.first_name, 'answer': '', 'score': 0, 'lastround': 0}})
     requiredplayers=int(update.message.text.replace("/setplayers ", "").strip())
     replytext=f"Required players count changed to {requiredplayers}"
     await update.message.reply_text(
             replytext
         )
 
-async def set_timer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Add a job to the queue."""
-    chat_id = update.effective_message.chat_id
-    try:
-        # args[0] should contain the time for the timer in seconds
-        due = float(context.args[0])
-        if due < 0:
-            await update.effective_message.reply_text("Sorry we can not go back to future!")
-            return
-
-        job_removed = remove_job_if_exists(str(chat_id), context)
-        context.job_queue.run_once(alarm, due, chat_id=chat_id, name=str(chat_id), data=due)
-
-    except (IndexError, ValueError):
-
-
-async def unset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Remove the job if the user changed their mind."""
-    chat_id = update.message.chat_id
-    job_removed = remove_job_if_exists(str(chat_id), context)
-    text = "Timer successfully cancelled!" if job_removed else "You have no active timer."
-    await update.message.reply_text(text)
-
-
 def random_char(y) -> str:
-    global currentPuzzle
-    unwanted_chars="xvzpqkj"
+    global currentpuzzle
+    unwanted_chars = "xvzpqkj"
     new = ''.join(random.choice([s for s in string.ascii_lowercase if s not in unwanted_chars]) for x in range(y))
-    currentPuzzle=new.upper()
-    return currentPuzzle
+    currentpuzzle=new.upper()
+    return currentpuzzle
 
 async def lwf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts new round of Letters With Friends."""
-    global totalplaying
-    global requiredplayers
-    playingDict.update({user.id: user.first_name})
-    if totalplaying>=requiredplayers:
-        return WAITFORANSWER
-    elif totalplaying+1==requiredplayers:
-        totalplaying=totalplaying+1
-        text=f"Players: {totalplaying}/{requiredplayers}\nMax players reached...\nStarting game!"
+    global currentpuzzle 
+    global currentround
+    user=update.effective_user
+    if update.effective_chat.id not in context.bot_data:
+        context.bot_data[update.effective_chat.id]={}
+    if 'players' in context.bot_data[update.effective_chat.id]:
+        if user.id in context.bot_data[update.effective_chat.id]:
+            if context.bot_data['players'][user.id]['round']>context.bot_data[update.effective_chat.id]['round']:
+                return WAITFORANSWER
+        else:
+             context.bot_data[update.effective_chat.id]['players'][user.id]={'name': user.full_name, 'score': 0, 'round': 0, 'answer': ''}
     else:
-        totalplaying=totalplaying+1
-        text=f"Players: {totalplaying}/{requiredplayers}\nWaiting for more to join..."
-        playertext=""
-        current=0
-        for key in playingDict.keys():
-            if current!=0:
-                playertext += f"\n{playingDict[key]}"
-            else:
-                current=1
-                playertext = f"{playingDict[key]}"
-        replytext=f"{text}\n\nPlayers:\n{playertext}"
-    return STARTGAME
-
-async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Users join the game until total player count is met."""
-    global totalplaying
-    global playingDict
-    global requiredplayers
-    global currentPuzzle
-    replytext=""
-    user = update.message.from_user
-    if totalplaying==requiredplayers:
-        currentPuzzle=random_char(3)
-        replytext=f"Write an acronym that starts with these the following {len(currentPuzzle)} characters!\n\n{currentPuzzle.upper()}"
-        await update.message.reply_text(
-            replytext, reply_markup=ReplyKeyboardRemove()
-        )
-        return WAITFORANSWER
-    else:
+        context.bot_data[update.effective_chat.id]['players']={user.id: {'chat': update.effective_chat.id, 'name': user.full_name, 'score': 0, 'round': 0, 'answer': ''}}
+        context.bot_data[update.effective_chat.id]['round']=0
+    
+    
+    if len(context.bot_data[update.effective_chat.id]['players']) == requiredplayers:
+        text=f"BACKRONYMS - Make funny acronyms from random sets of letters!\n\n{len(context.bot_data[update.effective_chat.id]['players'])}/{requiredplayers} players have joined.\nMax players reached...\n\nStarting game!"
         await update.message.reply_text(
             text
         )
-        return
+        time.sleep(3)
+        replytext=""
+        currentpuzzle=random_char(3)
+        replytext=f"Write an acronym that starts with these the following 3 characters!\n\n{currentpuzzle}"
+        await update.message.reply_text(
+            replytext, reply_markup=ReplyKeyboardRemove()
+        )
+        context.bot_data[update.effective_chat.id]['players'][user.id]['round']=1
+        context.bot_data[update.effective_chat.id]['round']=1
+        return WAITFORANSWER
+    else: 
+        playertext=f"BACKRONYMS - Make funny acronyms from random sets of letters!\n\n{len(context.bot_data[update.effective_chat.id]['players'])}/{requiredplayers} players have joined\nWaiting for more to join...\n\nPlayers:"
+        text=''
+        for player in context.bot_data[update.effective_chat.id]['players']:
+            playertext += f"\n{context.bot_data[update.effective_chat.id]['players'][player]['name']}"
+        await update.message.reply_text(
+            playertext
+        )
+        context.bot_data[update.effective_chat.id]['players'][user.id]['round']=1
+        return WAITFORANSWER
 
 def quitgame():
     global votedNumber
-    global votedList
     global currentround
-    global answerssubmitted
-    global scoreDict
-    global answerDict
-    global totalplaying
-    global requiredplayers
-    global answerssubmitted
-    global playingDict
-    globalPuzzle=''
-    playingDict.clear()
-    answersubmitted.clear()
-    totalplaying.clear()
-    answerDict.clear()
-    scoreDict.clear()
-    votedList.clear()
-    usedchars.clear()
     currentround=0
     votedNumber=0
-    currentPuzzle=''
 
-
-
-
-async def poll(update: Update, context: ContextTypes.DEFAULT_TYPE, question='', answers=[]) -> None:
+async def poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends answers users submitted."""
-    questions=answers.copy()
+    global currentpuzzle
+    questions=[]
+    for key in context.bot_data[update.effective_chat.id]['players']:
+        questions+=[context.bot_data[update.effective_chat.id]['players'][key]['answer']]
     message = await context.bot.send_poll(
         update.effective_chat.id,
-        question.upper(),
+        f"Choose the best answer for the acronym {currentpuzzle}:",
         questions,
         is_anonymous=False,
         allows_multiple_answers=False,
@@ -202,12 +161,7 @@ async def poll(update: Update, context: ContextTypes.DEFAULT_TYPE, question='', 
 
 async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Reveal the votes!"""
-    global totalplaying
-    global playingDict
-    global currentround
-    global answerDict
     global totalrounds
-    global scoreDict
     user = update.effective_user
     answer = update.poll_answer
     answered_poll = context.bot_data[answer.poll_id]
@@ -223,190 +177,124 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
             answer_string += questions[question_id] + " and "
         else:
             answer_string += questions[question_id]
-    for key in answerDict.keys():
-        if answer_string == answerDict[key]:
-            if key in scoreDict:
-                scoreDict.update({key: scoreDict[key]+1})
-            else:
-                scoreDict.update({key: 1})
-    if user.id in playingDict:
+    for key in context.bot_data[answered_poll['chat_id']]['players']:
+        if answer_string == context.bot_data[answered_poll['chat_id']]['players'][key]['answer']:
+            context.bot_data[answered_poll['chat_id']]['players'][key]['score'] += 1
+    if user.id in context.bot_data[answered_poll['chat_id']]['players']:
+        context.bot_data[answered_poll['chat_id']]['players'][user.id]['round'] += 1
         answered_poll["answers"] += 1
     # Close poll after three participants voted
-    if answered_poll["answers"] == totalplaying:
-        if currentround == totalrounds:
-            highestnumber=0
-            champion=''
-            tie=False
-            dupes=0
-            replytext="THAT'S IT! FINAL SCORES:"
-            for key in scoreDict.keys():
-                replytext+=f"\n{playingDict[key]} - {scoreDict[key]}"
-                if int(scoreDict[key])==highestnumber:
-                    dupes+=1
-                if int(scoreDict[key]) > highestnumber:
-                    dupes=0
-                    highestnumber=int(scoreDict[key])
-                    champion=playingDict[key];
-            for key in scoreDict.keys():
-                if champion!=key:
-                    if highestnumber==scoreDict[key]:
-                        tie=True
-            if dupes==0:
-                replytext+=f"\n\n\nWinner - {champion}"
-            else:
-                replytext+="\n\n\nTIE B-B-B-B-BRAKER"
-                replytext+=f"\n\nWhoops, not ready yet. For now lets just say that whoever had {highestnumber} points won! Share the victory dammnit!"
-                #TODO: DEAL WITH TIE BREAKER
-                reply_keyboard = [["Rematch", "New match", "Quit game"]]
-                replytext+= "\n\nSo - what next, lil bitch?"
+    if answered_poll["answers"] == len(context.bot_data[answered_poll['chat_id']]['players']):
+        if context.bot_data[answered_poll['chat_id']]['round'] < totalrounds:
+
             await context.bot.send_message(
                 answered_poll["chat_id"],
-                replytext
+                f"Next round:\n\n{random_char(context.bot_data[answered_poll['chat_id']]['round']+3)}"
             )
-            currentround=0
-            scoreDict.clear()
-            return FINISH
-        else:
-            await context.bot.send_message(
-                answered_poll["chat_id"],
-                f"NEXT BACKRONYM: {random_char(currentround+3)}"
-            )
-            answerDict.clear()
-            currentround=currentround+1
-            await context.bot.stop_poll(answered_poll["chat_id"], answered_poll["message_id"])
+            context.bot_data[answered_poll['chat_id']]['round'] += 1
             return WAITFORANSWER
-    return WAITFORANSWER
+        highest = 0
+        MessageText=''
+        winrar = ''
+        tiemembers=''
+        tie=0
+        for key in context.bot_data[answered_poll['chat_id']]['players']:
+            if int(context.bot_data[answered_poll['chat_id']]['players'][key]['score']) > highest:
+                highest = int(context.bot_data[answered_poll['chat_id']]['players'][key]['score'])
+                winrar = context.bot_data[answered_poll['chat_id']]['players'][key]['name']
+                tiemembers = winrar
+            elif highest == int(context.bot_data[answered_poll['chat_id']]['players'][key]['score']):
+                tie=1
+                tiemembers += f"\n{context.bot_data[answered_poll['chat_id']]['players'][key]['name']}"
+            if tie==1:
+                pretext = f"TIE GAME WINNERS:\n{tiemembers}\n\n"
+            else:
+                pretext=f"WINNER:\n{winrar}\n\n"
+        for key in context.bot_data[answered_poll['chat_id']]['players']: 
+            MessageText += f"\n{context.bot_data[answered_poll['chat_id']]['players'][key]['name']} - {context.bot_data[answered_poll['chat_id']]['players'][key]['score']}"
+        await context.bot.send_message(
+            answered_poll["chat_id"],
+            f"{pretext}TOTALS:{MessageText}\n\nSend /lwf to start another round.\nHINT: If you want to change the maximum player setting type:\n/setplayers NUMBER"
+        )
+        context.bot_data.clear()
+        return ConversationHandler.END
+    return
 
 async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Waits for text input from players"""
-    global answerDict
-    global currentPuzzle
-    global totalplaying
-    global requiredplayers
-    global answerssubmitted
-    global playingDict
-    global currentround
-    if totalplaying < requiredplayers:
+    global currentpuzzle
+    user=update.effective_user
+    username=user.full_name
+    if context.bot_data[update.effective_chat.id]['round']<context.bot_data[update.effective_chat.id]['players'][user.id]['round']:
+        print("oi settle down then m8 yoo too early m8")
         return
     user = update.effective_user
-    if user.id not in playingDict:
-        print("User not in player list.")
+   
+    if user.id not in context.bot_data[update.effective_chat.id]['players']:
+        await update.message.reply_text(
+            f"Sorry {user.full_name}, you're not in the player list, you'll have to wait until next game!"
+        )  
         return
-    if user.id in answerDict:
-        print("User already submitted")
-        return
+
     response = update.message.text
     response = response.strip()
     while '  ' in response:
         response = response.replace('  ', ' ')
     currentnum=0
     replytext=""
+    chatid = update.effective_chat.id
+
     for respon in response.split():
-        if list(currentPuzzle)[currentnum].lower() == list(respon)[0].lower():
+        if list(currentpuzzle)[currentnum].lower() == list(respon)[0].lower():
             if len(list(respon)) == 1:
                 if respon.lower().strip() in "iuryac":
                     currentnum+=1
                 else:
-                    print(f"ERROR: generic answer given in Bacronym(letter {curentPuzzle[currentnum]})")
+                    print(f"ERROR: generic answer given in Backronym(letter {currentpuzzle[currentnum]} doesn't match)")
             else:
               currentnum+=1
         else:
             print("ERROR:Non matching acronym!")
             return
-    if currentnum == len(currentPuzzle):
-        answerssubmitted+=1
-        answerDict.update({user.id: response})
-        curr=0
-        for key in answerDict.keys():
-            if curr==0:
-                replytext+=f"Submitted:\n{playingDict[key]}"
-                curr+=1
-            else:
-                replytext+=f"\n{playingDict[key]}"
-        await update.message.reply_text(
-            replytext
-        )
-    if answerssubmitted==len(playingDict):
-        answerssubmitted=0
-        values=[]
-        for keyfer in answerDict.keys():
-            values.append(str(answerDict[keyfer]))
-        await poll(update, context, str(currentPuzzle), values)
-    return
-
-async def votinground(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    global scoreDict
-    global votedNumber
-    global playingDict
-    global votedList
-    global currentround
-    global currentPuzzle
-    global totalrounds
-    global answerssubmitted
-    user = update.effective_user
-    validname=0
-    if currentround==totalrounds:
-        highestnumber=0
-        champion=''
-        tie=False
-        dupes=0
-        replytext="THAT'S IT! FINAL SCORES:"
-        for key in scoreDict.keys():
-            replytext+=f"\n{playingDict[key]} - {scoreDict[key]}"
-            if int(scoreDict[key])==highestnumber:
-                dupes+=1
-            if int(scoreDict[key]) > highestnumber:
-                dupes=0
-                highestnumber=int(scoreDict[key])
-                champion=playingDict[key];
-        for key in scoreDict.keys():
-            if champion!=key:
-                if highestnumber==scoreDict[key]:
-                    tie=True
-        if dupes==0:
-            replytext+=f"\n\n\nWinner - {champion}"
+    
+    if currentnum == len(currentpuzzle):
+        if 'answers' in context.bot_data[update.effective_chat.id]:
+            if user.full_name in context.bot_data[update.effective_chat.id]['answers']:
+                await update.message.reply_text(
+                    f"Sorry {user.full_name}, you have already submitted an answer!"
+                )  
+                return
+        await update.effective_message.delete()
+        for key in context.bot_data[update.effective_chat.id]['players']:
+            if context.bot_data[update.effective_chat.id]['players'][key]['answer'].lower() == response.lower():
+                replytext='Great minds think alike!\nUnfortunately this answer has already been submitted, please submit a different response!'
+                await context.bot.send_message(
+                    chatid,
+                    replytext
+                )
+                return
+        context.bot_data[update.effective_chat.id]['players'][user.id]['answer'] = response
+        if 'answers' in context.bot_data[update.effective_chat.id]:
+            context.bot_data[update.effective_chat.id]['answers'] += [user.full_name]
         else:
-            replytext+="\n\n\nTIE B-B-B-B-BRAKER"
-            replytext+=f"\n\nWhoops, not ready yet. For now lets just say that whoever had {highestnumber} points won! Share the victory dammnit!"
-            #TODO: DEAL WITH TIE BREAKER
-            reply_keyboard = [["Rematch", "New match", "Quit game"]]
-            replytext+= "\n\nSo - what next, lil bitch?"
-            await update.effective_message(
-                replytext,
+            context.bot_data[update.effective_chat.id]['answers'] = [user.full_name]
+        await context.bot.send_message(
+                chatid,
+                f"{username} has submitted their answer!"
             )
-            currentround=0
-            scoreDict.clear()
-            return FINISH
-    if len(votedList) ==  len(playingDict):
-        for key in scoreDict.keys():
-            replytext+=f"\n{playingDict[key]}: {scoreDict[key]}"
-
+          
+    if len(context.bot_data[update.effective_chat.id]['answers'])==len(context.bot_data[update.effective_chat.id]['players']):
+        context.bot_data[update.effective_chat.id]['answers'].clear()
+        await poll(update, context)
+        return
+    return
 
 async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # ADD FINISH SHIT
-    global answerDict
-    global scoreDict
-    global votedList
-    global usedchars
-    global currentPuzzle
-    global playingDict
-    text=update.message.text
-    if "Rematch" in text:
-        answerDict.clear()
-        scoreDict.clear()
-        votedList.clear()
-        usedchars.clear()
-        currentPuzzle=''
-        return STARTGAME
-    elif "New match" in text:
-        quitgame()
-    elif "Quit game" in text:
-        quitgame()
-        await update.message.reply_text(
-            "Rock on! If you want to start a game later just type /lwf!", reply_markup=ReplyKeyboardRemove()
-         )
-        return ConversationHandler.END
-    print("game over")
+    context.bot_data[update.effective_chat].Clear()
+    update.effective_message(
+        "Game finished! Enter /lwf again to start a new one!\n\nHint: Want to change max players?\nSend \"/setplayers x\" with x being the number of players, without the quotes, before joining the next round!"
+    )
     return
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -434,7 +322,6 @@ async def receive_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def main() -> None:
     """Run the bot."""
-    global roundinfo
     
     # Create the Application and pass it your bot's token.
     application = (
@@ -443,14 +330,13 @@ def main() -> None:
         .concurrent_updates(False)
         .arbitrary_callback_data(True)
         .build()
+
     )
     # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("lwf", lwf)],
         states={
-            STARTGAME: [MessageHandler(filters.Regex("^(Join game|No thanks|Start game|New match|Rematch|Quit)$"), startgame)],
             WAITFORANSWER: [MessageHandler(filters.TEXT, waitforanswer)],
-            VOTINGROUND: [MessageHandler(filters.TEXT, votinground)],
             FINISH: [MessageHandler(filters.TEXT, finish)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
@@ -459,10 +345,9 @@ def main() -> None:
         per_chat=True,
         per_message=False
     )
-    application.add_handler(CommandHandler("setplayers", setplayers))
+    
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("poll", poll))
-
+    application.add_handler(CommandHandler("setplayers", setplayers))
     application.add_handler(MessageHandler(filters.POLL, receive_poll))
     application.add_handler(PollAnswerHandler(receive_poll_answer))
     application.add_handler(MessageHandler (filters.Regex("^(Reset Game)$"), quitgame))
