@@ -19,6 +19,9 @@ import time
 import random
 
 from telegram import __version__ as TG_VER
+import time, threading
+
+
 
 try:
     from telegram import __version_info__
@@ -56,7 +59,13 @@ from telegram.constants import ParseMode
 
 currentpuzzle = ''
 totalrounds = 3
-requiredplayers = 2
+requiredplayers = 5
+skipvote = 0
+rounds_length_in_seconds = 30
+
+async def timer():
+    threading.Timer(rounds_length_in_seconds, timer).start()
+    
 
 # Enable logging
 logging.basicConfig(
@@ -64,17 +73,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 TOKEN = "6270603273:AAHLTXrg6ozchgm--iSarxsVzQCewMlwtKM"
-WAITFORANSWER, FINISH = range(2)
+WAITFORANSWER, FINISH, CONT = range(3)
 
+async def cont(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global requiredplayers
+    global skipvote
+    user = update.effective_chat.id
+    context.bot_data[update.effective_chat.id]['roundtype']='voting'
+    
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global requiredplayers
+    global skipvote
+    user = update.effective_chat.id
+    await update.message.reply_text(
+            replytext
+        )
+    
+
+    
 async def setplayers(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    requiredplayers=int(update.message.text.replace("/setplayers ", "").strip())
+    global requiredplayers
+    user = update.effective_chat.id
+    text=str(update.effective_message.text)
+    text=text.replace('/setplayers', '')
+    text=text.strip()
+    requiredplayers=int(text)
     replytext=f"Required players count changed to {requiredplayers}"
     await update.message.reply_text(
             replytext
         )
     
 async def boo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id not in context.bot_data:
+        return
     if 'forshame' in context.bot_data[update.effective_chat.id]:
         if context.bot_data[update.effective_chat.id]['forshame'] != 0:
             shameID=context.bot_data[update.effective_chat.id]['forshame']
@@ -82,21 +113,25 @@ async def boo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Masturbatory point removed!"
             )
             context.bot_data[update.effective_chat.id]['forshame']=0
-            context.bot_data[update.effective_chat.id]['answers'][shameID]['score']-=1
+            context.bot_data[update.effective_chat.id]['players'][shameID]['score']-=1
     
 def random_char(y) -> str:
     global currentpuzzle
-    unwanted_chars = "xvzpqkj"
-    new = ''.join(random.choice([s for s in string.ascii_lowercase if s not in unwanted_chars]) for x in range(y))
-    currentpuzzle=new.upper()
+    unwanted_chars = "xzqk"
+    chars=''
+    for x in range(y):
+        chars+=random.choice([s for s in string.ascii_lowercase if s not in unwanted_chars and s not in chars])
+    currentpuzzle=chars.upper()
     return currentpuzzle
 
 async def lwf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts new round of Letters With Friends."""
     global currentpuzzle 
+    global requiredplayers
     user=update.effective_user
     if update.effective_chat.id not in context.bot_data:
         context.bot_data[update.effective_chat.id]={}
+
    
     if 'players' in context.bot_data[update.effective_chat.id]:
         if len(context.bot_data[update.effective_chat.id]['players']) == requiredplayers:
@@ -152,6 +187,7 @@ async def poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         questions,
         is_anonymous=False,
         allows_multiple_answers=False,
+        open_period=30,
     )
     # Save some info about the poll the bot_data for later use in receive_poll_answer
     payload = {
@@ -167,6 +203,8 @@ async def poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Reveal the votes!"""
     global totalrounds
+    global skipvote
+    context.bot_data[update.effective_chat.id]['roundtype']='voting'
     user = update.effective_user
     answer = update.poll_answer
     answered_poll = context.bot_data[answer.poll_id]
@@ -191,7 +229,7 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
     if context.bot_data[answered_poll['chat_id']]['players'][user.id]['answer'] == answer_string:
         await context.bot.send_message(
             answered_poll["chat_id"],
-            f"{context.bot_data[answered_poll['chat_id']]['players'][user.id]['name']} just voted for themeselves!\n\nDue to TG limitations we cannot remove votes from polls, so we leave this decision to your competion!\n\nsend /boo before the end of the round and their point will be removed!"
+            f"{context.bot_data[answered_poll['chat_id']]['players'][user.id]['name']} just voted for themeselves!\n\nDue to TG limitations we cannot remove votes from polls, so we leave this decision to your competion!\n\nsend /boo before at any time until another person votes for themselves to remove the point!\n\nNOTE: For example of when to NOT send /boo would be if you simply answered gibberish and their answer made sense as a sentence while yours did not whatsoever, etc."
         )
         context.bot_data[answered_poll['chat_id']]['forshame']=user.id
 
@@ -199,7 +237,7 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
    
     # Close poll after three participants voted
     if answered_poll["answers"] == len(context.bot_data[answered_poll['chat_id']]['players']):
-        context.bot_data[answered_poll['chat_id']]['forshame']=0
+        await context.bot.stop_poll(answered_poll["chat_id"], answered_poll["message_id"])
         if context.bot_data[answered_poll['chat_id']]['round'] < totalrounds:
 
             await context.bot.send_message(
@@ -231,7 +269,7 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
             answered_poll["chat_id"],
             f"{pretext}TOTALS:{MessageText}\n\nSend /lwf to start another round.\nHINT: If you want to change the maximum player setting type:\n/setplayers NUMBER"
         )
-        context.bot_data[answered_poll['chat_id']]['players'] = {}
+        context.bot_data[answered_poll['chat_id']] = {}
         return ConversationHandler.END
     return
 
@@ -239,19 +277,26 @@ async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     """Waits for text input from players"""
     global currentpuzzle
     user=update.effective_user
+    if 'players' in context.bot_data['update.effectve_chat.id']:
+        if user.id not in context.bot_data[update.effective_chat.id]['players']:
+            await update.message.reply_text(
+                f"Sorry {user.full_name}, you're not in the player list, you'll have to wait until next game!"
+            )  
+        return
+    response = update.message.text
+    await update.effective_message.delete()
+   
+
     username=user.full_name
+    context.bot_data[update.effective_chat.id]['roundtype']='waiting'
     if context.bot_data[update.effective_chat.id]['round']<context.bot_data[update.effective_chat.id]['players'][user.id]['round']:
         print("oi settle down then m8 yoo too early m8")
         return
     user = update.effective_user
    
-    if user.id not in context.bot_data[update.effective_chat.id]['players']:
-        await update.message.reply_text(
-            f"Sorry {user.full_name}, you're not in the player list, you'll have to wait until next game!"
-        )  
-        return
 
-    response = update.message.text
+
+
     response = response.strip()
     while '  ' in response:
         response = response.replace('  ', ' ')
@@ -268,6 +313,8 @@ async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
             
     for respon in response.split():
+        if currentnum == len(currentpuzzle):
+            continue
         if list(currentpuzzle)[currentnum].lower() == list(respon)[0].lower():
             if len(list(respon)) == 1:
                 if respon.lower().strip() in "iuryac":
@@ -281,13 +328,14 @@ async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             return
     
     if currentnum == len(currentpuzzle):
+        await update.effective_message.delete()
         if 'answers' in context.bot_data[update.effective_chat.id]:
             if user.full_name in context.bot_data[update.effective_chat.id]['answers']:
                 await update.message.reply_text(
                     f"Sorry {user.full_name}, you have already submitted an answer!"
                 )  
                 return
-        await update.effective_message.delete()
+
         for key in context.bot_data[update.effective_chat.id]['players']:
             if context.bot_data[update.effective_chat.id]['players'][key]['answer'].lower() == response.lower():
                 replytext='Great minds think alike!\nUnfortunately this answer has already been submitted, please submit a different response!'
@@ -305,6 +353,7 @@ async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 chatid,
                 f"{username} has submitted their answer!"
             )
+        context.bot_data[update.effective_chat.id]['players'][user.id]['round']+=1
           
     if len(context.bot_data[update.effective_chat.id]['answers'])==len(context.bot_data[update.effective_chat.id]['players']):
         context.bot_data[update.effective_chat.id]['answers'].clear()
@@ -315,18 +364,29 @@ async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # ADD FINISH SHIT
     context.bot_data[update.effective_chat].Clear()
-    update.effective_message(
+    await update.effective_message(
         "Game finished! Enter /lwf again to start a new one!\n\nHint: Want to change max players?\nSend \"/setplayers x\" with x being the number of players, without the quotes, before joining the next round!"
     )
     return
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation."""
-    user = update.message.from_user
+    user = update.effective_user
     logger.info("User %s canceled the conversation.", user.first_name)
-    await update.message.reply_text(
-        "Bye! I hope we can talk again some day.", reply_markup=ReplyKeyboardRemove()
+    await update.message.reply_text (
+    "Cancelled round! Use /lwf to start over."
     )
+    context.bot_data[update.effective_chat.id]= {}
+    return ConversationHandler.END
+
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancels and ends the conversation."""
+    user = update.effective_user
+    logger.info("User %s canceled the conversation.", user.first_name)
+    await update.message.reply_text (
+    "Reset all settings aned restarting bot! Use /lwf to start over(after a few conds, obviously!)."
+    )
+    context.bot_data[update.effective_chat.id]= {}
     return ConversationHandler.END
 
 
@@ -361,6 +421,7 @@ def main() -> None:
         states={
             WAITFORANSWER: [MessageHandler(filters.TEXT, waitforanswer)],
             FINISH: [MessageHandler(filters.TEXT, finish)],
+            CONT: [CommandHandler("cont", cont)]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True,
@@ -368,6 +429,8 @@ def main() -> None:
         per_chat=True,
         per_message=False
     )
+    application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(CommandHandler("reset", reset))
     application.add_handler(CommandHandler("boo", boo))
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("setplayers", setplayers))
