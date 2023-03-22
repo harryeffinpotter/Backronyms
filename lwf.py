@@ -340,7 +340,7 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
             answer_string += questions[question_id]
     for key in context.bot_data[answered_poll['chat_id']]['players']:
         if answer_string == context.bot_data[answered_poll['chat_id']]['players'][key]['answer']:
-            if context.bot_data[answered_poll['chat_id']]['players'][user.id]['answer'] == answer_string:
+            if context.bot_data[answered_poll['chat_id']]['players'][user.id]['answer'] != answer_string:
                 context.bot_data[answered_poll['chat_id']]['players'][key]['score'] += 1
     if user.id in context.bot_data[answered_poll['chat_id']]['players']:
         context.bot_data[answered_poll['chat_id']]['players'][user.id]['round'] += 1
