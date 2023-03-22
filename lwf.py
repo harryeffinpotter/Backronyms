@@ -105,6 +105,19 @@ async def setplayers(update: Update, context: ContextTypes.DEFAULT_TYPE):
             replytext
         )
     
+async def setrounds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_chat.id
+    text=str(update.effective_message.text)
+    text=text.replace('/setrounds', '')
+    text=text.strip()
+    if update.effective_chat.id not in context.bot_data:
+        context.bot_data[update.effective_chat.id]={}
+    context.bot_data[update.effective_chat.id]['totalrounds']=int(text)
+    totalrounds = context.bot_data[update.effective_chat.id]['totalrounds']
+    replytext=f"Total rounds set to {totalrounds}"
+    await update.message.reply_text(
+        replytext
+    )
     
     
 async def boo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,6 +151,9 @@ async def lwf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.effective_chat.id not in context.bot_data:
         context.bot_data[update.effective_chat.id]={}
         
+    if 'totalrounds' not in context.bot_data[update.effective_chat.id]:
+        context.bot_data[update.effective_chat.id]['totalrounds']=3
+        
     if 'required' not in context.bot_data[update.effective_chat.id]:
         context.bot_data[update.effective_chat.id]['required']=3
     
@@ -156,7 +172,7 @@ async def lwf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.bot_data[update.effective_chat.id]['round']=0
     
     if len(context.bot_data[update.effective_chat.id]['players']) == context.bot_data[update.effective_chat.id]['required']:
-        text=f"Acronyms - a set of letters that represent specific words.\n*Backronyms - a set of words that represent specific letters.*\n\n*Example:*\n====================================\n                *-=* `T  F  L  M  T  P `*=-*\n(*T*)he (*F*)irst (*L *)etters (*M*)atch (*T*)he (*P*)rompt\n====================================\nPrompt: TFLMTP\nAcceptable answer: The First Letters Match The Prompt\n\nNotes:\n-Audience member votes are equal to player votes!\n-Each round has a 60 second timer that starts as soon as the first move of the round is made.\n-Sentences that makes sense > low effort answers.\n-Change player # with /setplayers\n\n{len(context.bot_data[update.effective_chat.id]['players'])}/{context.bot_data[update.effective_chat.id]['required']} Starting game!.\n\nJoined:\n"
+        text=f"{user.full_name} has joined!\n\n{len(context.bot_data[update.effective_chat.id]['players'])}/{context.bot_data[update.effective_chat.id]['required']} players joined.\nStarting game!."
         await update.message.reply_text(
             text, parse_mode= 'Markdown'
         )
@@ -175,15 +191,11 @@ async def lwf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.bot_data[update.effective_chat.id]['first']=True
         return WAITFORANSWER
     else: 
-        first=0
-        playertext=f"Acronyms - a set of letters that represent specific words.\n*Backronyms - a set of words that represent specific letters.*\n\n*Example:*\n====================================\n                *-=* `T  F  L  M  T  P `*=-*\n(*T*)he (*F*)irst (*L *)etters (*M*)atch (*T*)he (*P*)rompt\n====================================\nPrompt: TFLMTP\nAcceptable answer: The First Letters Match The Prompt\n\nNotes:\n-Audience member votes are equal to player votes!\n-Each round has a 60 second timer that starts as soon as the first move of the round is made.\n-Sentences that makes sense > low effort answers.\n-Change player # with /setplayers\n\n{len(context.bot_data[update.effective_chat.id]['players'])}/{context.bot_data[update.effective_chat.id]['required']} players have joined.\n\nJoined:\n"
-        for player in context.bot_data[update.effective_chat.id]['players']:
-            if first==0:
-                playertext += f"{context.bot_data[update.effective_chat.id]['players'][player]['name']}"
-                first=1
-            else:
-                playertext += f", {context.bot_data[update.effective_chat.id]['players'][player]['name']}"
 
+        if len(context.bot_data[update.effective_chat.id]['players'])==1:
+            playertext=f"Acronyms - a set of letters that represent specific words.\n*Backronyms - a set of words that represent specific letters.*\n\n*Example:*\n====================================\n                *-=* `T  F  L  M  T  P `*=-*\n(*T*)he (*F*)irst (*L *)etters (*M*)atch (*T*)he (*P*)rompt\n====================================\nPrompt: TFLMTP\nAcceptable answer: The First Letters Match The Prompt\n\nNotes:\n-Audience member votes are equal to player votes!\n-Each round has a 60 second timer that starts as soon as the first move of the round is made.\n-Sentences that makes sense > low effort answers.\n-Change total players with /setplayers\n-Change total rounds with /setrounds\n\n{len(context.bot_data[update.effective_chat.id]['players'])}/{context.bot_data[update.effective_chat.id]['required']} | Rounds: {context.bot_data[update.effective_chat.id]['toralrounds']}\n\nStarted by:\n{user.full_name}"
+        else: 
+            playertext=f"{user.full_name} has joined the game!\n\n{len(context.bot_data[update.effective_chat.id]['players'])}/{context.bot_data[update.effective_chat.id]['required']} players joined."
         await update.message.reply_text(
             playertext, parse_mode= 'Markdown'
         )
@@ -312,7 +324,7 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     answer = update.poll_answer
     answered_poll = context.bot_data[answer.poll_id]
-    totalrounds=context.bot_data[answered_poll['chat_id']]['required']
+  
     context.bot_data[answered_poll['chat_id']]['poll']=answered_poll
     try:
         questions = answered_poll["questions"]
@@ -343,7 +355,7 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.bot_data[answered_poll["chat_id"]]['first']=True
         await context.bot.stop_poll(answered_poll["chat_id"], answered_poll["message_id"])
         context.bot_data[answered_poll['chat_id']]['roundtype']='waiting'
-        if context.bot_data[answered_poll['chat_id']]['round'] < totalrounds:
+        if context.bot_data[answered_poll['chat_id']]['round'] <   context.bot_data[answered_poll['chat_id']]['totalrounds']:
             newpuzzle=random_char(context.bot_data[answered_poll['chat_id']]['round']+3)
             context.bot_data[answered_poll['chat_id']]['currentpuzzle']=newpuzzle
             betterspace=newpuzzle.replace("", "    ")[1: -1]
@@ -415,7 +427,7 @@ async def timelimit(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send the alarm message."""
     
     job = context.job
-    totalrounds=context.bot_data[job.chat_id]['required']
+    totalrounds=context.bot_data[job.chat_id]['totalrounds']
     if context.bot_data[job.chat_id]['roundtype']=='waiting':     
         context.bot_data[job.chat_id]['roundtype']='voting'
         context.bot_data[job.chat_id]['first']=True
@@ -567,6 +579,7 @@ def main() -> None:
     application.add_handler(CommandHandler("boo", boo))
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("setplayers", setplayers))
+    application.add_handler(CommandHandler("setrounds", setrounds))
     application.add_handler(MessageHandler(filters.POLL, receive_poll))
     application.add_handler(PollAnswerHandler(receive_poll_answer))
     application.run_polling()
