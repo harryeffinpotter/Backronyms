@@ -450,8 +450,6 @@ async def timelimit(context: ContextTypes.DEFAULT_TYPE) -> None:
         context.bot_data[job.chat_id]['first']=True
         answered_poll=context.bot_data[job.chat_id]['poll']
         await context.bot.stop_poll(answered_poll["chat_id"], answered_poll["message_id"])
-        for key in context.bot_data[answered_poll['chat_id']]['players'].keys():
-            context.bot_data[answered_poll['chat_id']]['players'][key]['answer']=''
         if context.bot_data[answered_poll['chat_id']]['round'] < 3:
             newpuzzle=random_char(context.bot_data[answered_poll['chat_id']]['round']+3)
             context.bot_data[job.chat_id]['currentpuzzle']=newpuzzle
