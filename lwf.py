@@ -452,7 +452,8 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
                 for player in basedict['players'].keys():
                     suddendeathtotal+=f"\n{players[player]['name']} - {players[player]['score']}"
                 suddendeathtotal=(
-                    f"{suddendeathtotal}\n\n\n/lwf - play again!\n"
+                    f"{suddendeathtotal}\n\n\n"
+                    "/lwf - play again!\n"
                     "/setplayers - change required number of players.\n"
                     "/setrounds - change number of rounds.\n"
                     "/settimelimit - change round time limit (default: 60 seconds)")
@@ -502,10 +503,14 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
                     )
                 await context.bot.send_message(
                     chatid,
-                    (f"{pretext}TOTALS:{MessageText}\n\nSend /lwf to start another round.\n"
-                    f"HINT: If you want to change the maximum player setting type:\n/setplayers #"
-                    )   
-                )
+                    (
+                    f"{pretext}TOTALS:{MessageText}\n\n\n"
+                    f"/lwf - play again!\n"
+                    "/setplayers - change required number of players.\n"
+                    "/setrounds - change number of rounds.\n"
+                    "/settimelimit - change round time limit (default: 60 seconds)")
+                )   
+                
                 players.clear()
                 basedict['round']=0
                 basedict['answers']=[]
@@ -532,10 +537,10 @@ async def set_timer(chatID, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = chatID
     try:
         # args[0] should contain the time for the timer in seconds
-        timelimit=10
+        timelimit=45
         if chat_id in context.bot_data:
             if 'timelimit' not in context.bot_data[chat_id]:
-                context.bot_data[chat_id]['timelimit']=10
+                context.bot_data[chat_id]['timelimit']=45
             else:
                 timelimit=context.bot_data[chat_id]['timelimit']
         remove_jobs(context)
@@ -563,8 +568,6 @@ async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
     if totalrounds<currround:
         roundtype='voting'
     if roundtype=='waiting' and totalrounds+1 > currround:
-        if 'tiebreaker' in basedict:
-            await set_timer(chatid, context)
         roundtype='voting'
         anscount=0
         storeduser=0
@@ -647,7 +650,9 @@ async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
                 basedict['answers']=[]
                 basedict['first']=True
                 basedict['started']=0 
+                remove_jobs(context)
                 del basedict['tiebreaker']
+                return
         if currround>=totalrounds:
             basedict['answers'].clear()
             for key in playerkeys:
@@ -672,8 +677,11 @@ async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
                 MessageText += f"\n{players[key]['name']} - {players[key]['score']}"
             await context.bot.send_message(
                  chatid,
-                (f"{pretext}TOTALS:{MessageText}\n\nSend /lwf to start another round.\n"
-                "HINT: If you want to change the maximum player setting type:\n/setplayers NUMBER")
+                (f"{pretext}TOTALS:{MessageText}\n\n"
+                    "/lwf - play again!\n"
+                    "/setplayers - change required number of players.\n"
+                    "/setrounds - change number of rounds.\n"
+                    "/settimelimit - change round time limit (default: 45 seconds)")
                 )
 
             if 'tiebreaker' not in basedict:
@@ -686,7 +694,7 @@ async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def tiebreaker(chatID, context: ContextTypes.DEFAULT_TYPE):
-    context.bot_data[chatID]['timelimit']=25
+    context.bot_data[chatID]['timelimit']=15
     players=context.bot_data[chatID]['players']
     await context.bot.send_message(
         chatID,
