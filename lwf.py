@@ -692,22 +692,13 @@ async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
                 basedict['first']=True
                 basedict['started']=0
     except Exception as e:
-        logging.log(0, str(e.message))    
+        logging.log(0, str(e.message))
 
 
 async def tiebreaker(chatID, context: ContextTypes.DEFAULT_TYPE):
     try:
-        context.bot_data[chatID]['timelimit']=15
+        context.bot_data[chatID]['timelimit']=20
         players=context.bot_data[chatID]['players']
-        await context.bot.send_message(
-            chatID,
-                ("We have a tie... so that means its time for...\n\nSUDDEN MF'N DEATH!\n\n"
-                 "Sudden death will begin in approx. 30 seconds.\n\nSudden death consists of" 
-                 " 3 rapid fire rounds lasting 15 seconds each! Players and audience will only"
-                 "have 15 seconds to vote as well. The rounds will be 3, 4, then 5 letters and "
-                 "then it will end.\n\nGood night and good luck!")
-        )
-        context.bot_data[chatID]['marked']=[]
         for key in players.keys():
             if key not in context.bot_data[chatID]['tiebreakcontestants']:
                 context.bot_data[chatID]['marked'].append(key)
@@ -715,12 +706,29 @@ async def tiebreaker(chatID, context: ContextTypes.DEFAULT_TYPE):
                 players[key]['score'] = 0
                 players[key]['answer'] = ""
                 players[key]['round'] = 101
-        for id in context.bot_data[chatID]['marked']:
+        for value in context.bot_data[chatID]['marked']:
             del context.bot_data[chatID]['players'][id]
-        time.sleep(3)
+        suddendeathpeople=[]
+        for key in context.bot_data[chatID]['players'].keys():
+            suddendeathpeople.append[key]
+        await context.bot.send_message(
+            chatID,
+            (
+                "THESE PLAYERS HAVE TIED FOR THE WIN:"
+                f"{', '.join(list(suddendeathpeople))}\n\n\n"
+                "You know what that means...\nSUDDEN MF'N DEATH!\n\n"
+                "Sudden death will begin in approx. 30 SECONDS.\n\nSudden death consists of"
+                " 3 rapid fire rounds lasting 15 seconds each! Players and audience will only"
+                "have 15 seconds to vote as well. The rounds will be 3, 4, then 5 letters and "
+                "then it will end.\n\nGood night and good luck!"
+            )
+        )
+        time.sleep(30)
+        context.bot_data[chatID]['marked']=[]
+
 
         replytext=""
-        currentpuzzle=random_char(3)
+        currentpuzzle=random_char(30)
         context.bot_data[chatID]['currentpuzzle']=currentpuzzle
         for key in players.keys():
             players[key]['answer']=''
