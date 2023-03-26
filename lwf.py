@@ -45,7 +45,6 @@ from telegram.ext import (
     filters,
     PollAnswerHandler,
 )
-from examples.timerbot import remove_job_if_exists
 
 
 # Enable logging
@@ -59,9 +58,29 @@ TOKEN = "5898007528:AAE6bcp1ueln3fNtEp94cwXM5RPRJ6JbMkE"
 WAITFORANSWER, FINISH = range(2)
 
 
+async def nfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chatid = update.effective_chat.id
+    if chatid not in context.bot_data:
+        await update.message.reply_text("No settings found./")
+        return
+    basedict = context.bot_data[chatid]
+    if 'timelimit' not in basedict:
+        basedict['timelimit'] = 45
+    if 'totalrounds' not in basedict:
+        basedict['totalrounds'] = 3
+    if 'required' not in basedict:
+        basedict['required'] = 3
+    await update.message.reply_text(
+        f"Rounds - {basedict['totalrounds']} (default: 3).\n"
+        f"Required players - {basedict['required']} (default: 3).\n"
+        f"Time limit(in seconds) - {basedict['timelimit']} (default: 45)"
+    )
+
+
 async def rep(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = str(update.effective_message.text)
     text = text.replace('/rep', '')
+    text = text.replace("@backronyms_bot", "")
     text = text.strip()
     user = update.effective_user
     if user.id in context.bot_data:
@@ -76,9 +95,10 @@ async def rep(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def settimelimit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def settime(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = str(update.effective_message.text)
-    text = text.replace('/settimelimit', '')
+    text = text.replace('/settime', '')
+    text = text.replace("@backronyms_bot", "")
     text = text.strip()
     if int(text) < 5 or int(text) > 6000:
         if int(text) > 6000:
@@ -105,6 +125,7 @@ async def settimelimit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def setplayers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = str(update.effective_message.text)
     text = text.replace('/setplayers', '')
+    text = text.replace("@backronyms_bot", "")
     text = text.strip()
     if int(text) < 2 or int(text) > 20:
         if int(text) > 20:
@@ -128,6 +149,7 @@ async def setplayers(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def setrounds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = str(update.effective_message.text)
     text = text.replace('/setrounds', '')
+    text = text.replace("@backronyms_bot", "")
     text = text.strip()
     if int(text) < 2 or int(text) > 20:
         if int(text) > 20:
@@ -164,130 +186,135 @@ def random_char(y) -> str:
 
 async def s(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts new round of Letters With Friends."""
-    try:
-        user = update.effective_user
-        thread = update.message.message_thread_id
-        chatid = update.effective_chat.id
-        if chatid not in context.bot_data:
-            context.bot_data[chatid] = {}
-            basedict = context.bot_data[update.effective_chat.id]
-            basedict['first'] = True
-            basedict['started'] = 0
-        else:
-            basedict = context.bot_data[update.effective_chat.id]
-        basedict['thread_id'] = thread
+    user = update.effective_user
+    thread = update.message.message_thread_id
+    chatid = update.effective_chat.id
+    if chatid not in context.bot_data:
+        context.bot_data[chatid] = {}
         basedict = context.bot_data[update.effective_chat.id]
-        if 'totalrounds' not in basedict:
-            totalrounds = 3
-            basedict['totalrounds'] = 3
-        else:
-            totalrounds = basedict['totalrounds']
-        if 'round' not in basedict:
-            basedict['round'] = 0
-        currround = basedict['round']
-        if 'required' not in basedict:
-            basedict['required'] = 3
-        requiredplayers = basedict["required"]
-        if 'players' in basedict:
-            players = basedict['players']
-            if len(players) == requiredplayers:
-                await update.message.reply_text(
-                    (
-                        "Sorry, the current round is full, each round only lasts a "
-                        "few mintues so be ready to join the next one!\n"
-                        "Don't forget to /setplayers NUMBER to increase the maximum players!"
-                    )
+        basedict['first'] = True
+        basedict['started'] = 0
+    else:
+        basedict = context.bot_data[update.effective_chat.id]
+    basedict['thread_id'] = thread
+    basedict = context.bot_data[update.effective_chat.id]
+    basedict['pollvoted'] = 0
+    oldpolls = []
+    for key in context.bot_data:
+        if 'questions' in context.bot_data[key]:
+            oldpolls.append(key)
+    for polldata in oldpolls:
+        del context.bot_data[polldata]
+    if 'totalrounds' not in basedict:
+        totalrounds = 3
+        basedict['totalrounds'] = 3
+    else:
+        totalrounds = basedict['totalrounds']
+    if 'round' not in basedict:
+        basedict['round'] = 0
+    currround = basedict['round']
+    if 'required' not in basedict:
+        basedict['required'] = 3
+    requiredplayers = basedict["required"]
+    if 'players' in basedict:
+        players = basedict['players']
+        if len(players) == requiredplayers:
+            await update.message.reply_text(
+                (
+                    "Sorry, the current round is full, each round only lasts a "
+                    "few mintues so be ready to join the next one!\n"
+                    "Don't forget to /setplayers NUMBER to increase the maximum players!"
                 )
-            if user.id in players:
-                if players[user.id]['round'] > currround:
-                    return WAITFORANSWER
-            else:
-                players[user.id] = {
+            )
+        if user.id in players:
+            if players[user.id]['round'] > currround:
+                return WAITFORANSWER
+        else:
+            players[user.id] = {
+                'name': user.full_name,
+                'score': 0,
+                'round': 0,
+                'answer': ''
+            }
+    else:
+        basedict['players'] = {
+            user.id:
+                {
+                    'chat': chatid,
                     'name': user.full_name,
                     'score': 0,
                     'round': 0,
-                    'answer': ''
+                    'answer': '',
+                    'id': user.id
                 }
+        }
+        players = basedict['players']
+    if len(players) == requiredplayers and basedict['started'] == 0:
+        basedict['started'] = 1
+        players[user.id]['round'] = 1
+        basedict['first'] = True
+        text = (
+            f"{user.full_name} has joined!\n\n"
+            f"{len(players)}/{requiredplayers} players joined."
+            "\nStarting game!."
+        )
+
+        await update.message.reply_text(
+            text,
+            parse_mode='Markdown'
+        )
+
+        time.sleep(3)
+        replytext = ""
+        currentpuzzle = random_char(3)
+        basedict['currentpuzzle'] = currentpuzzle
+        for key in players.keys():
+            players[key]['answer'] = ''
+        formattedpuzzle = currentpuzzle.replace("", "     ")[1: -1]
+        replytext = f"MAKE A BACKRONYM FOR:\n\n============\n*{formattedpuzzle}*\n============"
+
+        await update.message.reply_text(
+            replytext,
+            parse_mode='Markdown'
+        )
+        basedict['roundtype'] = 'waiting'
+        basedict['round'] = 1
+        players[user.id]['round'] += 1
+        return WAITFORANSWER
+    else:
+        if len(context.bot_data[update.effective_chat.id]['players']) == 1:
+            basedict['started'] = 0
+            playertext = (
+                "Acronyms - a `set of letters that represent specific words.`\n"
+                "*BACKRONYMS* - `a set of words that represent specific letters.`\n\n"
+                "*Example:*\n=========="
+                "\n*T F L M T P*\n"
+                "(*T*)he (*F*)irst (*L *)etters (*M*)atch (*T*)he (*P*)rompt\n"
+                "==========\nPrompt: TFLMTP\n"
+                "Answer: The First Letters Match The Prompt\n\n"
+                "Notes:\n-Audience member votes are equal to player votes!\n\n"
+                "Change # of players:\n`/setplayers`\n"
+                "Change # of rounds:\n`/setrounds`\n"
+                "Change time limit (# of seconds):\n"
+                "`/settime`\n\n"
+                f"{len(players)}/{requiredplayers} | Rounds: {totalrounds}\n\n"
+                f"Started by:\n{user.full_name}\n"
+                "Click to join -> /s"
+            )
         else:
-            basedict['players'] = {
-                user.id:
-                    {
-                        'chat': chatid,
-                        'name': user.full_name,
-                        'score': 0,
-                        'round': 0,
-                        'answer': '',
-                        'id': user.id
-                    }
-            }
-            players = basedict['players']
-        if len(players) == requiredplayers and basedict['started'] == 0:
-            basedict['started'] = 1
-            players[user.id]['round'] = 1
-            basedict['first'] = True
-            text = (
-                f"{user.full_name} has joined!\n\n"
+            playertext = (
+                f"{user.full_name} has joined the game!\n\n"
                 f"{len(players)}/{requiredplayers} players joined."
-                "\nStarting game!."
             )
 
-            await update.message.reply_text(
-                text,
-                parse_mode='Markdown'
-            )
-
-            time.sleep(3)
-            replytext = ""
-            currentpuzzle = random_char(3)
-            basedict['currentpuzzle'] = currentpuzzle
-            for key in players.keys():
-                players[key]['answer'] = ''
-            formattedpuzzle = currentpuzzle.replace("", "     ")[1: -1]
-            replytext = f"MAKE A BACKRONYM FOR:\n\n============\n*{formattedpuzzle}*\n============"
-
-            await update.message.reply_text(
-                replytext,
-                parse_mode='Markdown'
-            )
-            basedict['roundtype'] = 'waiting'
-            basedict['round'] = 1
-            players[user.id]['round'] += 1
-            return WAITFORANSWER
-        else:
-            if len(context.bot_data[update.effective_chat.id]['players']) == 1:
-                basedict['started'] = 0
-                playertext = (
-                    "Acronyms - a `set of letters that represent specific words.`\n"
-                    "*BACKRONYMS* - `a set of words that represent specific letters.`\n\n"
-                    "*Example:*\n===================================="
-                    "\n                *-=* `T  F  L  M  T  P `*=-*\n"
-                    "(*T*)he (*F*)irst (*L *)etters (*M*)atch (*T*)he (*P*)rompt\n"
-                    "====================================\nPrompt: TFLMTP\n"
-                    "Acceptable answer: The First Letters Match The Prompt\n\n"
-                    "Notes:\n-Audience member votes are equal to player votes!\n"
-                    "-Each round has a 60 sec timer after 1st move of the round is made.\n"
-                    "-Sentences that makes sense > low effort answers.\n"
-                    "-Change total players with /setplayers\n"
-                    "-Change total rounds with /setrounds\n\n"
-                    f"{len(players)}/{requiredplayers} | Rounds: {totalrounds}\n\n"
-                    f"Started by:\n{user.full_name}"
-                )
-            else:
-                playertext = (
-                    f"{user.full_name} has joined the game!\n\n"
-                    f"{len(players)}/{requiredplayers} players joined."
-                )
-
-            await context.bot.send_message(
-                chatid,
-                playertext,
-                parse_mode='Markdown'
-            )
-            basedict['first'] = False
-            players[user.id]['round'] += 1
-            return WAITFORANSWER
-    except Exception as e:
-        logging.log(0, str(e))
+        await context.bot.send_message(
+            chatid,
+            playertext,
+            parse_mode='Markdown'
+        )
+        basedict['first'] = False
+        players[user.id]['round'] += 1
+        return WAITFORANSWER
 
 
 async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -296,6 +323,7 @@ async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     basedict = context.bot_data[update.effective_chat.id]
     if basedict['round'] == 0:
         return
+
     if update.effective_chat.id in context.bot_data:
         if 'roundtype' in basedict:
             if basedict['roundtype'] != 'waiting':
@@ -304,6 +332,7 @@ async def waitforanswer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     username = user.full_name
     currentpuzzle = ""
     chatid = update.message.chat_id
+
     response = update.message.text
     response = response.strip()
     players = basedict['players']
@@ -437,136 +466,150 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
     """ POLL ANSWERS
     Receive votes from users
     in the form of poll answers."""
-    try:
-        user = update.effective_user
-        answer = update.poll_answer
-        answered_poll = context.bot_data[answer.poll_id]
-        chatid = answered_poll['chat_id']
-        context.bot_data[chatid]['poll'] = answered_poll
-        basedict = context.bot_data[chatid]
-        if user.id in basedict['players']:
-            if 'pollvoted' not in basedict:
-                basedict['pollvoted'] = 1
-                if 'tiebreaker' not in basedict:
-                    await set_timer(chatid, context)
-            else:
-                basedict['pollvoted'] += 1
-            players = basedict['players']
-        try:
-            questions = answered_poll["questions"]
-        # this means this poll answer update is from an old poll, we can't do our answering then
-        except KeyError:
-            return
-        selected_options = answer.option_ids
-        answer_string = ""
-        for question_id in selected_options:
-            if question_id != selected_options[-1]:
-                answer_string += questions[question_id] + " and "
-            else:
-                answer_string += questions[question_id]
-        if user.id in players.keys():
-            for key in players.keys():
-                if answer_string == players[key]['answer']:
-                    if players[user.id]['answer'] != answer_string:
-                        players[key]['score'] += 1
-        else:
-            players[key]['score'] += 1
-        if user.id in players:
-            players[user.id]['round'] += 1
-        if basedict['pollvoted'] == 1:
+    user = update.effective_user
+    answer = update.poll_answer
+    answered_poll = context.bot_data[answer.poll_id]
+    chatid = answered_poll['chat_id']
+    basedict = context.bot_data[chatid]
+    if 'players' in basedict:
+        players = basedict['players']
+    if user.id in basedict['players']:
+        if 'pollvoted' not in basedict:
+            basedict['pollvoted'] = 1
             if 'tiebreaker' not in basedict:
-                basedict['first'] = False
                 await set_timer(chatid, context)
-        # Close poll after three participants voted
-        if basedict['pollvoted'] >= len(players):
-            basedict['answers'].clear()
-            basedict['pollvoted'] = 0
-            remove_jobs(context)
-            basedict['first'] = True
-            await context.bot.stop_poll(chatid, answered_poll["message_id"])
+        else:
+            basedict['pollvoted'] += 1
+    try:
+        questions = answered_poll["questions"]
+    # this means this poll answer update is from an old poll, we can't do our answering then
+    except KeyError:
+        return
+    selected_options = answer.option_ids
+    answer_string = ""
+    for key in basedict['players'].keys():
+        basedict['players'][key]['answer'] = ''
+    for question_id in selected_options:
+        if question_id != selected_options[-1]:
+            answer_string += questions[question_id] + " and "
+        else:
+            answer_string += questions[question_id]
+    if user.id in players.keys():
+        for key in players.keys():
+            if answer_string == players[key]['answer']:
+                if players[user.id]['answer'] != answer_string:
+                    players[key]['score'] += 1
+    else:
+        for key in players.keys():
+            if answer_string == players[key]['answer']:
+                best = key
+        players[best]['score'] += 1
+    if user.id in players:
+        players[user.id]['round'] += 1
+    if basedict['pollvoted'] == 1:
+        if 'tiebreaker' not in basedict:
+            basedict['first'] = False
+            await set_timer(chatid, context)
+    # Close poll after three participants voted
+    if basedict['pollvoted'] >= len(players):
+        basedict['answers'].clear()
+        basedict['pollvoted'] = 0
+        remove_jobs(context)
+        basedict['first'] = True
+        polllist = []
+        for key in context.bot_data:
+            if 'questions' in context.bot_data[key]:
+                polly = context.bot_data[key]['message_id']
+                if context.bot_data[key]['chat_id'] == chatid:
+                    await context.bot.stop_poll(chatid, polly)
+                    polllist.append(key)
+        for pollid in polllist:
+            del context.bot_data[pollid]
+        basedict['roundtype'] = 'waiting'
+        if basedict['round'] < basedict['totalrounds']:
+            if basedict['round'] > 99:
+                number = basedict['round'] - 100
+            else:
+                number = basedict['round']
+            newpuzzle = random_char(number + 3)
+            for key in players.keys():
+                players[key]['answer'] = ''
+            basedict['currentpuzzle'] = newpuzzle
+            betterspace = newpuzzle.replace("", "   ")[1: -1]
+            await context.bot.send_message(
+                chatid,
+                (f"MAKE A BACKRONYM FOR:\n\n=================\n{betterspace}\n"
+                 "================="),
+                parse_mode='Markdown'
+            )
+            basedict['round'] += 1
             basedict['roundtype'] = 'waiting'
-            if basedict['round'] < basedict['totalrounds']:
-                if basedict['round'] > 99:
-                    number = basedict['round'] - 100
+            if 'tiebreaker' in basedict:
+                await set_timer(chatid, context)
+            return WAITFORANSWER
+        highest = 0
+        MessageText = ''
+        winrar = ''
+        tiemembers = ''
+        tie = 0
+        pretext = ""
+        suddendeathtotal = "SUDDEN DEATH TOTALS. THESE SCORES ARE FINAL!\n\n"
+        if basedict['round'] == basedict['totalrounds']:
+            for pkey in basedict['players'].keys():
+                if pkey in context.bot_data:
+                    context.bot_data[pkey]['rep'] += basedict['players'][pkey]['score']
                 else:
-                    number = basedict['round']
-                newpuzzle = random_char(number + 3)
-                for key in players.keys():
-                    players[key]['answer'] = ''
-                basedict['currentpuzzle'] = newpuzzle
-                betterspace = newpuzzle.replace("", "   ")[1: -1]
+                    context.bot_data[pkey] = {'rep': context.bot_data['players'][pkey]['score']}
+            if 'tiebreaker' in basedict:
+                for player in basedict['players'].keys():
+                    suddendeathtotal += (
+                        f"\n{players[player]['name']}"
+                        f"- {players[player]['score']} ({context.bot_data[player]['rep']})")
+                    suddendeathtotal = (
+                        f"{suddendeathtotal}\n\n\n"
+                        "Start new game:\n`/s`\n\n"
+                        "Change # of players:\n`/setplayers`\n\n"
+                        "Change # of rounds:\n`/setrounds`\n\n"
+                        "Change time limit (# of seconds):\n"
+                        "`/settime`"
+                    )
                 await context.bot.send_message(
                     chatid,
-                    (f"MAKE A BACKRONYM FOR:\n\n=================\n{betterspace}\n"
-                     "================="),
-                    parse_mode='Markdown'
+                    suddendeathtotal
                 )
-                basedict['round'] += 1
-                basedict['roundtype'] = 'waiting'
-                if 'tiebreaker' in basedict:
-                    await set_timer(chatid, context)
-                return WAITFORANSWER
-            highest = 0
-            MessageText = ''
-            winrar = ''
-            tiemembers = ''
-            tie = 0
-            pretext = ""
-            suddendeathtotal = "SUDDEN DEATH TOTALS. THESE SCORES ARE FINAL!\n\n"
-            if basedict['round'] == basedict['totalrounds']:
-                if user.id in context.bot_data:
-                    context.bot_data[user.id]['rep'] += basedict['players'][user.id]['score']
-                else:
-                    context.bot_data[user.id] = {rep: basedict['players'][user.id]['score']}
-                if 'tiebreaker' in basedict:
-                    for player in basedict['players'].keys():
-                        suddendeathtotal += (
-                            f"\n{players[player]['name']}"
-                            f"- {players[player]['score']} ({context.bot_data[player]['rep']})")
-                        suddendeathtotal = (
-                            f"{suddendeathtotal}\n\n\n"
-                            "/s - play again!\n"
-                            "/setplayers - change required number of players.\n"
-                            "/setrounds - change number of rounds.\n"
-                            "/settimelimit - change round time limit (default: 60 seconds)"
-                        )
-                    await context.bot.send_message(
-                        chatid,
-                        suddendeathtotal
-                    )
-                    players.clear()
-                    basedict['round'] = 0
-                    basedict['tiebreakcontestants'].clear()
-                    if 'storedtotal' in basedict:
-                        basedict['totalrounds'] = basedict['storedtotal']
-                        del basedict['storedtotal']
-                    basedict['answers'] = []
-                    basedict['first'] = True
-                    basedict['started'] = 0
-                    del basedict['tiebreaker']
-                    remove_jobs(context)
-                    return
+                players.clear()
+                basedict['round'] = 0
+                basedict['tiebreakcontestants'].clear()
+                if 'storedtotal' in basedict:
+                    basedict['totalrounds'] = basedict['storedtotal']
+                    del basedict['storedtotal']
+                basedict['answers'] = []
+                basedict['first'] = True
+                basedict['started'] = 0
+                del basedict['tiebreaker']
+                remove_jobs(context)
+                return
+            for key in basedict['players'].keys():
+                if int(players[key]['score']) > highest:
+                    highest = int(players[key]['score'])
+                    winrar = players[key]['name']
+                    tiemembers = winrar
+                    basedict['tiebreakcontestants'] = [key]
+                elif highest != 0:
+                    tie = 1
+                    tiemembers += f"\n{players[key]['name']}"
+                    basedict['tiebreakcontestants'].append(key)
+            if tie == 1:
+                basedict['tiebreaker'] = True
+                basedict['answers'].clear()
+                await unset(str(chatid), context)
+                await tiebreaker(chatid, context)
                 for key in basedict['players'].keys():
-                    if int(players[key]['score']) > highest:
-                        highest = int(players[key]['score'])
-                        winrar = players[key]['name']
-                        tiemembers = winrar
-                        basedict['tiebreakcontestants'] = [key]
-                    elif highest != 0:
-                        tie = 1
-                        tiemembers += f"\n{players[key]['name']}"
-                        basedict['tiebreakcontestants'].append(key)
-                if tie == 1:
-                    basedict['tiebreaker'] = True
-                    basedict['answers'].clear()
-                    await unset(str(chatid), context)
-                    await tiebreaker(chatid, context)
-                    if user.id in basedict:
-                        basedict[user.id]['rep'] += basedict
+                    if key in context.bot_data:
+                        context.bot_data[key]['rep'] += basedict['players'][key]['score']
                     else:
-                        basedict[user.id] = {rep: basedict['players'][user.id]['score']}
-                    return
-
+                        context.bot_data[key] = {'rep': basedict['players'][key]['score']}
+                return
             pretext = f"WINNER:\n{winrar}\n\n"
             for key in players:
                 MessageText += (
@@ -577,10 +620,11 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
                 chatid,
                 (
                     f"{pretext}TOTALS:{MessageText}\n\n"
-                    "/s - play again!\n"
-                    "/setplayers - change required number of players.\n"
-                    "/setrounds - change number of rounds.\n"
-                    "/settimelimit - change round time limit (default: 45 seconds)"
+                    "Start new game:\n`/s`\n\n"
+                    "Change # of players:\n`/setplayers`\n\n"
+                    "Change # of rounds:\n`/setrounds`\n\n"
+                    "Change time limit (# of seconds):\n"
+                    "`/settime`"
                 )
             )
             if 'tiebreaker' not in basedict:
@@ -589,8 +633,6 @@ async def receive_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
             basedict['answers'] = []
             basedict['first'] = True
             basedict['started'] = 0
-    except Exception as e:
-        logging.log(0, str(e))
 
 
 async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -598,10 +640,11 @@ async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     update.effective_message(
         update.effective_chat,
         (
-            "Game finished! Enter /s again to start a new one!\n\n"
-            "Hint: Want to change max players?\nSend \"/setplayers x\""
-            "with x being the number of players, without the quotes,"
-            "before joining the next round!"
+            "Start new game:\n`/s`\n\n"
+            "Change # of players:\n`/setplayers`\n\n"
+            "Change # of rounds:\n`/setrounds`\n\n"
+            "Change time limit (# of seconds):\n"
+            "`/settime`"
         )
     )
     return
@@ -627,166 +670,181 @@ async def set_timer(chatID, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send the alarm message."""
-    try:
-        job = context.job
-        chatid = job.chat_id
-        basedict = context.bot_data[chatid]
-        basedict['pollvoted'] = 0
-        totalrounds = basedict['totalrounds']
-        currround = basedict['round']
-        roundtype = basedict['roundtype']
-        players = basedict['players']
-        playerkeys = basedict['players'].keys()
-        answers = basedict['answers']
-        basedict['first'] = True
-        basedict['started'] = True
-        thefuck = False
-        if totalrounds < currround:
-            roundtype = 'voting'
-        if roundtype == 'waiting' and totalrounds + 1 > currround:
-            roundtype = 'voting'
-            anscount = 0
-            storeduser = 0
-
-            for key in playerkeys:
-                if len(players[key]['answer']) > 0:
-                    anscount += 1
-                    storeduser = key
-            if anscount > 1:
-                basedict['roundtype'] = 'voting'
-                await poll(chatid, context)
+    job = context.job
+    chatid = job.chat_id
+    basedict = context.bot_data[chatid]
+    totalrounds = basedict['totalrounds']
+    currround = basedict['round']
+    roundtype = basedict['roundtype']
+    players = basedict['players']
+    playerkeys = basedict['players'].keys()
+    answers = basedict['answers']
+    if 'tiebreaker' in basedict:
+        await set_timer(chatid, context)
+    basedict['first'] = True
+    basedict['started'] = True
+    if roundtype == 'waiting' and totalrounds + 1 > currround:
+        roundtype = 'voting'
+    anscount = 0
+    storeduser = 0
+    if 'pollvoted' in basedict:
+        roundtype = 'voting'
+        polllist = []
+        for key in context.bot_data:
+            if 'questions' in context.bot_data[key]:
+                polly = context.bot_data[key]['message_id']
+                if context.bot_data[key]['chat_id'] == chatid:
+                    await context.bot.stop_poll(chatid, polly)
+                    polllist.append(key)
+        for pollid in polllist:
+            del context.bot_data[pollid]
+    for key in playerkeys:
+        if len(players[key]['answer']) > 0:
+            anscount += 1
+            storeduser = key
+    if anscount > 1 :
+        basedict['roundtype'] = 'voting'
+        for key in basedict['players'].keys():
+            basedict['players'][key]['answer'] = ''
+        basedict['answers'].clear()
+        await poll(chatid, context)
+    else:
+        if anscount == 1:
+            players[storeduser]['score'] += 1
+            await context.bot.send_message(
+                chatid,
+                "Only one player submitted an answer,"
+                " automatically giving them the round!"
+                "\n\nHere's what their answer was:"
+                f"\n{players[storeduser]['answer']}"
+            )
+            for key in basedict['players'].keys():
+                basedict['players'][key]['answer'] = ''
+        roundtype = "voting"
+    for key in playerkeys:
+        players[key]['answer'] = ''
+    basedict['pollvoted'] = 0
+    if roundtype == 'voting':
+        if totalrounds != basedict['round']:
+            polllist = []
+            for key in context.bot_data:
+                if 'questions' in context.bot_data[key]:
+                    polly = context.bot_data[key]['message_id']
+                    if context.bot_data[key]['chat_id'] == chatid:
+                        await context.bot.stop_poll(chatid, polly)
+                        polllist.append(key)
+            for pollid in polllist:
+                del context.bot_data[pollid]
+            for users in playerkeys:
+                players[users]['round'] += 1
+            if currround > 99:
+                number = currround - 100
             else:
-                if anscount == 1:
-                    players[storeduser]['score'] += 1
-                    await context.bot.send_message(
-                        chatid,
-                        "Only one player submitted an answer,"
-                        " automatically giving them the round ! "
+                number = currround
+            basedict['round'] += 1
+            newpuzzle = random_char(number + 3)
+            basedict['currentpuzzle'] = newpuzzle
+            betterspace = newpuzzle.replace("", "   ")[1: -1]
+            await context.bot.send_message(
+                chatid,
+                (f"MAKE A BACKRONYM FOR:\n\n=================\n{betterspace}"
+                 "\n================="),
+                parse_mode='Markdown'
+            )
+            basedict['roundtype'] = 'waiting'
+            answers.clear()
+            basedict['answers'] = []
+            return
+        highest = 0
+        winrar = ''
+        tiemembers = ''
+        tie = 0
+        suddendeathtotal = "SUDDEN DEATH TOTALS. THESE SCORES ARE FINAL!\n"
+        if 'tiebreaker' in context.bot_data[chatid].keys():
+            for pid in playerkeys:
+                if pid in context.bot_data:
+                    context.bot_data[pid]['rep'] += basedict['players'][pid]['score']
+                else:
+                    context.bot_data[pid] = {'rep': basedict['players'][pid]['score']}
+
+            if 'tiebreaker' in basedict:
+                for player in playerkeys:
+                    reputation = context.bot_data[player]['rep']
+                    suddendeathtotal += (
+                        f"\n{players[player]['name']}"
+                        f"- {players[player]['score']} ({reputation})"
                     )
-                    thefuck = True
-                roundtype = "voting"
-        if roundtype == 'voting':
-            if totalrounds != basedict['round']:
-                if not thefuck:
-                    for key in context.bot_data:
-                        if 'questions' in context.bot_data[key]:
-                            polly = context.bot_data[key]['message_id']
-                            if context.bot_data[key]['chat_id'] == chatid:
-                                await context.bot.stop_poll(chatid, polly)
-                                thefuck = False
-                else:
-                    thefuck = False
-                for users in playerkeys:
-                    players[users]['round'] += 1
-                if currround > 99:
-                    number = currround - 100
-                else:
-                    number = currround
-                basedict['round'] += 1
-                if 'tiebreaker' in basedict:
-                    await set_timer(chatid, context)
-                for key in playerkeys:
-                    players[key]['answer'] = ''
-                newpuzzle = random_char(number + 3)
-                basedict['currentpuzzle'] = newpuzzle
-                betterspace = newpuzzle.replace("", "   ")[1: -1]
+                suddendeathtotal = (
+                    f"{suddendeathtotal}\n\n\n/s - play again!\n"
+                    "/setplayers - change required number of players.\n"
+                    "/setrounds - change number of rounds.\n"
+                    "/settimelimit - change round time limit (default: 60 seconds)")
                 await context.bot.send_message(
                     chatid,
-                    (f"MAKE A BACKRONYM FOR:\n\n=================\n{betterspace}"
-                     "\n================="),
-                    parse_mode='Markdown'
+                    suddendeathtotal
                 )
-                basedict['roundtype'] = 'waiting'
-                answers.clear()
-                return WAITFORANSWER
-            highest = 0
-            MessageText = ''
-            winrar = ''
-            tiemembers = ''
-            tie = 0
-            suddendeathtotal = "SUDDEN DEATH TOTALS. THESE SCORES ARE FINAL!\n"
-            if 'tiebreaker' in context.bot_data[chatid]:
-                for pid in playerkeys:
-                    if pid in context.bot_data:
-                        context.bot_data[pid]['rep'] += basedict['players'][id]['score']
-                    else:
-                        context.bot_data[pid] = {rep: basedict['players'][pid]['score']}
-
-                if basedict['tiebreaker'] is True:
-                    for player in playerkeys:
-                        reputation = context.bot_data[player]['rep']
-                        suddendeathtotal += (
-                            f"\n{players[player]['name']}"
-                            f"- {players[player]['score']} ({reputation})"
-                        )
-                    suddendeathtotal = (
-                        f"{suddendeathtotal}\n\n\n/s - play again!\n"
-                        "/setplayers - change required number of players.\n"
-                        "/setrounds - change number of rounds.\n"
-                        "/settimelimit - change round time limit (default: 60 seconds)")
-                    await context.bot.send_message(
-                        chatid,
-                        suddendeathtotal
-                    )
-                    players.clear()
-                    basedict['round'] = 0
-                    basedict['tiebreakcontestants'].clear()
-                    if 'storedtotal' in basedict:
-                        basedict['totalrounds'] = basedict['storedtotal']
-                        del basedict['storedtotal']
-                    basedict['answers'] = []
-                    basedict['first'] = True
-                    basedict['started'] = 0
-                    remove_jobs(context)
-                    del basedict['tiebreaker']
-                    return ConversationHandler.END
-            if currround == totalrounds:
-                basedict['answers'].clear()
-                for key in playerkeys:
-                    if int(players[key]['score']) > highest:
-                        highest = int(players[key]['score'])
-                        winrar = players[key]['name']
-                        tiemembers = winrar
-                        basedict['tiebreakcontestants'] = [key]
-                    elif highest != 0 and highest == int(players[key]['score']):
-                        tie = 1
-                        tiemembers += f"\n{players[key]['name']}"
-                        basedict['tiebreakcontestants'].append(key)
-                    if tie == 1:
-                        basedict['tiebreaker'] = True
-                        basedict['answers'].clear()
-                        await unset(str(chatid), context)
-                        await tiebreaker(chatid, context)
-                        return
-            else:
-                pretext = f"WINNER:\n{winrar}\n\n"
-                for key in players:
-                    MessageText += (
-                        f"\n{players[key]['name']} - {players[key]['score']} "
-                        f"{context.bot_data[key]['rep']})"
-                    )
-                await context.bot.send_message(
-                    chatid,
-                    (f"{pretext}TOTALS:{MessageText}\n\n"
-                        "/s - play again!\n"
-                        "/setplayers - change required number of players.\n"
-                        "/setrounds - change number of rounds.\n"
-                        "/settimelimit - change round time limit (default: 45 seconds)")
-                )
-
-                if 'tiebreaker' not in basedict:
-                    players.clear()
+                players.clear()
                 basedict['round'] = 0
+                basedict['tiebreakcontestants'].clear()
+                if 'storedtotal' in basedict:
+                    basedict['totalrounds'] = basedict['storedtotal']
+                    del basedict['storedtotal']
                 basedict['answers'] = []
                 basedict['first'] = True
                 basedict['started'] = 0
-    except Exception as e:
-        logging.log(0, str(e))
+                remove_jobs(context)
+                del basedict['tiebreaker']
+                return ConversationHandler.END
+        if currround == totalrounds:
+            basedict['answers'].clear()
+            tie = 0
+            for key in playerkeys:
+                if int(players[key]['score']) > highest:
+                    highest = int(players[key]['score'])
+            for key in playerkeys:
+                if int(players[key]['score']) == highest:
+                    winrar = players[key]['name']
+                    tiemembers += f"\n{players[key]['name']}"
+                    tie += 1
+                    if 'tiebreakcontestants' not in basedict:
+                        basedict['tiebreakcontestants'] = [key]
+                    else:
+                        basedict['tiebreakcontestants'].append(key)
+                if tie > 1:
+                    basedict['tiebreaker'] = True
+                    basedict['answers'].clear()
+                    await unset(str(chatid), context)
+                    await tiebreaker(chatid, context)
+                    return
+            pretext = f"WINNER:\n{winrar}\n\n"
+            message_text = ''
+            for key in players:
+                message_text += (
+                    f"\n{players[key]['name']} - {players[key]['score']}"
+                    f"{context.bot_data[key]['rep']})"
+                )
+            await context.bot.send_message(
+                chatid,
+                (
+                    f"{pretext}TOTALS:{message_text}\n\n"
+                    "/s - play again!\n"
+                    "/setplayers - change required number of players.\n"
+                    "/setrounds - change number of rounds.\n"
+                    "/settimelimit - change round time limit (default: 45 seconds)"
+                )
+            )
+
+        if 'tiebreaker' not in basedict:
+            players.clear()
+        basedict['round'] = 0
+        basedict['answers'] = []
+        basedict['first'] = True
+        basedict['started'] = 0
 
 
 async def tiebreaker(chatID, context: ContextTypes.DEFAULT_TYPE):
     try:
-        context.bot_data[chatID]['timelimit'] = 20
+        context.bot_data[chatID]['timelimit'] = 15
         context.bot_data[chatID]['marked'] = []
         players = context.bot_data[chatID]['players']
         for key in players.keys():
@@ -807,14 +865,12 @@ async def tiebreaker(chatID, context: ContextTypes.DEFAULT_TYPE):
             (
                 "THESE PLAYERS HAVE TIED FOR THE WIN:\n"
                 f"{', '.join(list(suddendeathpeople))}\n\n\n"
-                "You know what that means...\nSUDDEN MF'N DEATH!\n\n"
-                "Sudden death will begin in approx. 30 SECONDS.\n\nSudden death consists of"
-                " 3 rapid fire rounds lasting 15 seconds each! Players and audience will only"
-                "have 15 seconds to vote as well. The rounds will be 3, 4, then 5 letters and "
-                "then it will end.\n\nGood night and good luck!"
+                "\nSUDDEN MF'N DEATH!\n\n"
+                "Sudden death will begin in 10 SECONDS.\n\nSudden death consists of"
+                " 3 rapid fire rounds lasting 15 seconds each!"
             )
         )
-        time.sleep(30)
+        time.sleep(10)
         replytext = ""
         currentpuzzle = random_char(3)
         context.bot_data[chatID]['currentpuzzle'] = currentpuzzle
@@ -830,9 +886,8 @@ async def tiebreaker(chatID, context: ContextTypes.DEFAULT_TYPE):
         context.bot_data[chatID]['roundtype'] = 'waiting'
         context.bot_data[chatID]['round'] = 101
         context.bot_data[chatID]['totalrounds'] = 103
-        context.bot_data[chatID]['tiebreaker'] = True
         context.bot_data[chatID]['pollvoted'] = 0
-        remove_job_if_exists(chatID, context)
+        remove_jobs(context)
         await set_timer(chatID, context)
         return WAITFORANSWER
     except Exception as e:
@@ -862,30 +917,30 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def reboot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation."""
-    if update.effective_user.id == 883877811:
-        user = update.effective_user
-        chatid = update.effective_chat.id
-        if chatid in context.bot_data.keys():
-            basedict = context.bot_data[chatid]
-        else:
-            context.bot_data[chatid] = {}
-        logging.info("User %s canceled the conversation.", user.first_name)
-        await update.message.reply_text(
-            "Reset all settings and restarting bot! Use /s to start over."
-        )
-        basedict['round'] = 0
-        basedict['answers'] = []
-        basedict['pollvoted'] = 0
-        basedict['first'] = None
-        basedict['roundtype'] = ''
-        basedict['started'] = 0
-        basedict.clear()
-        if 'players' in basedict:
-            basedict['players'].clear()
-        basedict['round'] = 0
-        if 'tiebreakcontestants' in basedict:
-            basedict['tiebreakcontestants'].clear()
-        return ConversationHandler.END
+    user = update.effective_user
+    chatid = update.effective_chat.id
+    if chatid in context.bot_data.keys():
+        basedict = context.bot_data[chatid]
+    else:
+        context.bot_data[chatid] = {}
+    logging.info("User %s canceled the conversation.", user.first_name)
+    await update.message.reply_text(
+        "Reset all settings and restarting bot! Use /s to start over."
+    )
+    basedict['round'] = 0
+    basedict['answers'] = []
+    basedict['pollvoted'] = 0
+    basedict['first'] = None
+    basedict['roundtype'] = ''
+    if 'tiebreaker' in basedict:
+        del basedict['tiebreaker']
+    basedict['started'] = 0
+    if 'players' in basedict:
+        basedict['players'].clear()
+    basedict['round'] = 0
+    if 'tiebreakcontestants' in basedict:
+        basedict['tiebreakcontestants'].clear()
+    return
 
 
 async def receive_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -934,11 +989,13 @@ def main() -> None:
 
     )
     application.add_handler(CommandHandler("rep", rep))
+    application.add_handler(CommandHandler("nfo", nfo))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("reboot", reboot))
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("setplayers", setplayers))
     application.add_handler(CommandHandler("setrounds", setrounds))
+    application.add_handler(CommandHandler("settime", settime))
     application.add_handler(MessageHandler(filters.POLL, receive_poll))
     application.add_handler(PollAnswerHandler(receive_poll_answer))
     application.run_polling()
