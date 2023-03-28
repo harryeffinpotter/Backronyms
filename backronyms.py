@@ -547,7 +547,7 @@ async def announce_winners(Skip: False, chatid, context: ContextTypes.DEFAULT_TY
     if 'tiebreaker' in basedict:
         basedict['totalrounds'] = basedict['storedtotalrounds']
         del basedict['tiebreaker']
-    await botmsg(messagetext, chatid, context)v
+    await botmsg(messagetext, chatid, context)
     basedict['round'] = 0
     basedict['answers'] = []
     basedict['pollvoted'] = 0
