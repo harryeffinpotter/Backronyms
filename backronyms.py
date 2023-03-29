@@ -66,10 +66,16 @@ async def nfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No settings found./")
         return
     basedict = context.bot_data[chatid]
+    if 'requiredplayers' not in basedict:
+        basedict['requiredplayers'] = 3
+    if 'totalrounds' not in basedict:
+        basedict['totalrounds'] = 3
+    if 'timelimit' not in basedict:
+        basedict['timelimit'] = 30
     await update.message.reply_text(
         f"*{basedict['requiredplayers']}* `/players` (default: 3, max 20)\n"
         f"*{basedict['totalrounds']}* `/rounds` (default: 3, max 20)\n"
-        f"*{basedict['timelimit']}* `/timelimit` (in seconds, default: 45, max 6000)",
+        f"*{basedict['timelimit']}* `/timelimit` (in seconds, default: 30, max 6000)",
         parse_mode="Markdown"
     )
 
@@ -263,6 +269,7 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 'answer': ''
             }
         }
+        players = basedict['players']
     if len(players) == requiredplayers:
         basedict['round'] = 0
         text = (
@@ -505,21 +512,20 @@ async def findwinner(chatid, context: ContextTypes.DEFAULT_TYPE):
         else:
             context.bot_data[pkey] = {'rep': basedict['players'][pkey]['score']}
     highestscore = 0
-    highestplayers = {'id': 0, 'name': ""}
+    highestplayers = []
     if 'tiebreaker' in basedict:
-        del basedict['tiebreaker']
         await announce_winners(True, chatid, context)
         return ConversationHandler.END
     else:
         for key in basedict['players'].keys():
             if int(players[key]['score']) > highestscore:
                 highestplayers.clear()
-                highestplayers.update({key: players[key]['name']})
+                highestplayers.append(key)
                 highestscore = int(players[key]['score'])
             elif int(players[key]['score']) == highestscore:
-                highestplayers.update({key: players[key]['name']})
-        if len(highestplayers.keys()) > 1:
-            await tiebreaker(highestplayers, chatid, context)
+                highestplayers.append(key)
+        if len(highestplayers) > 1:
+            await tiebreaker(highestscore, highestplayers, chatid, context)
         else:
             await announce_winners(False, chatid, context)
 
@@ -548,22 +554,17 @@ async def announce_winners(Skip: False, chatid, context: ContextTypes.DEFAULT_TY
     )
     if 'tiebreaker' in basedict:
         basedict['totalrounds'] = basedict['storedtotalrounds']
+        basedict['requiredplayers'] = basedict['storedtotalplayers']
         del basedict['tiebreaker']
     await botmsg(messagetext, chatid, context)
     basedict['round'] = 0
     basedict['answers'] = []
     basedict['pollvoted'] = 0
     basedict['rtype'] = ''
-    if 'tiebreaker' in basedict:
-        del basedict['tiebreaker']
-    if 'storedtotalrounds' in basedict:
-        basedict['totalrounds'] = basedict['storedtotalrounds']
     if 'players' in basedict:
-        basedict['players'].clear()
+        del basedict['players']
     basedict['round'] = 0
-    if 'tiebreakcontestants' in basedict:
-        basedict['tiebreakcontestants'].clear()
-    return
+    remove_jobs(context)
     return ConversationHandler.END
 
 async def set_timer(chatid, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -571,10 +572,10 @@ async def set_timer(chatid, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = chatid
     try:
         # args[0] should contain the time for the timer in seconds
-        timelimit = 45
+        timelimit = 30
         if chat_id in context.bot_data:
             if 'timelimit' not in context.bot_data[chat_id]:
-                context.bot_data[chat_id]['timelimit'] = 45
+                context.bot_data[chat_id]['timelimit'] = 30
             else:
                 timelimit = context.bot_data[chat_id]['timelimit']
         await remove_jobs(context)
@@ -626,42 +627,54 @@ async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
                     f"\n{players[storeduser]['answer']}"
                 )
                 await botmsg(msg, chatid, context)
-
+            basedict['round'] += 1
             if basedict['round'] >= basedict['totalrounds']:
                 await remove_jobs(context)
                 await findwinner(chatid, context)
             else:
                 basedict['rtype'] = 'answering'
                 await remove_jobs(context)
-                basedict['round'] += 1
                 await make_puzzle(chatid, context)
 
 
-async def tiebreaker(tiebreakcontestants, chatid, context: ContextTypes.DEFAULT_TYPE):
+async def tiebreaker(highestscore, tiebreakcontestants, chatid, context: ContextTypes.DEFAULT_TYPE):
     basedict = context.bot_data[chatid]
     basedict['timelimit'] = 15
     marked = []
+    scoresmessage = ""
+    for player in basedict['players']:
+        if highestscore == basedict['players'][player]['score']:
+            score=f"*{basedict['players'][player]['score']}*"
+        else:
+            score = basedict['players'][player]['score']
+        scoresmessage += f"\n{basedict['players'][player]['name']} - {score}"
     players = basedict['players']
     for key in players.keys():
-        if 'key' not in tiebreakcontestants:
+        if key not in tiebreakcontestants:
             marked.append(key)
-    for value in basedict['marked']:
-        del basedict['players'][value]
+    for item in marked:
+        del basedict['players'][item]
     suddendeathpeople = []
     for key in basedict['players'].keys():
         suddendeathpeople.append(basedict['players'][key]['name'])
+        basedict['players'][key]['score']=0
+        basedict['players'][key]['answer'] = ''
+        basedict['answers'] = []
     await context.bot.send_message(
         chatid,
         (
+            f"TOTAL SCORES:{scoresmessage}\n\n"
             "THESE PLAYERS HAVE TIED FOR THE WIN:\n"
-            f"{', '.join(list(suddendeathpeople))}\n\n\n"
-            "\nSUDDEN MF'N DEATH!\n\n"
-            "Sudden death will begin in 10 SECONDS.\n\nSudden death consists of"
+            f"*{'*, *'.join(list(suddendeathpeople))}*\n\n\n"
+            "\nSUDDEN DEATH TIE BREAKER FACE OFF!\n"
+            "...will begin in 10 SECONDS.\n\nSudden death consists of"
             " 3 rapid fire rounds lasting 15 seconds each!"
-        )
+        ),
+        parse_mode="Markdown"
     )
     time.sleep(10)
     basedict['storedtotalrounds'] = basedict['totalrounds']
+    basedict['storedrequiredplayers'] = basedict['requiredplayers']
     basedict['round'] = 0
     basedict['totalrounds'] = 3
     basedict['tiebreaker'] = True
@@ -711,12 +724,13 @@ async def reboot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if 'tiebreaker' in basedict:
         del basedict['tiebreaker']
     if 'storedtotalrounds' in basedict:
+        basedict['requiredplayers'] = basedict['storedrequiredplayers']
         basedict['totalrounds'] = basedict['storedtotalrounds']
+        del basedict['storedtotalrounds']
+        del basedict['storedrequiredplayers']
     if 'players' in basedict:
-        basedict['players'].clear()
+        del basedict['players']
     basedict['round'] = 0
-    if 'tiebreakcontestants' in basedict:
-        basedict['tiebreakcontestants'].clear()
     return
 
 
